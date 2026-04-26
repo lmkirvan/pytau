@@ -1,3 +1,12 @@
+# This script demonstrates how to use FitHandler with customization
+# Specifically, it shows how to overwrite spike-trains after loading
+# and run the rest of the inference pipeline manually.
+#
+# NOTE: This approach is not advised for production code. It is preferred
+# to follow the procedure in fit_manually.py for more control.
+# However, this example is useful for understanding the FitHandler internals
+# or when you need to make modifications to loaded data before fitting.
+
 # Import modules
 import os
 import sys
@@ -41,19 +50,97 @@ FitHandler_kwargs = dict(
     experiment_name="pytau_test",
 )
 
-# Initialize handler, and feed paramters
+# Initialize handler, and feed parameters
 handler = FitHandler(**FitHandler_kwargs)
 handler.set_model_params(**model_parameters)
 handler.set_preprocess_params(**preprocess_parameters)
 
-# Perform inference and save output to model database
+# ============================================================
+# SECTION: HOW TO OVERWRITE SPIKE-TRAINS AFTER LOADING
+# ============================================================
+#
+# This section demonstrates how to:
+# 1. Load spike-trains using the handler's load_spike_trains method
+# 2. Modify the loaded spike-trains (e.g., remove trials or neurons)
+# 3. Run subsequent pipeline methods manually
+#
+# This is useful when you need to preprocess data before fitting
+# but want to use the FitHandler infrastructure for the rest.
+
+print("\n" + "=" * 60)
+print("DEMO: Overwriting loaded spike-trains")
+print("=" * 60)
+
+# Step 1: Load spike trains using the handler
+# This populates handler.data with the raw spike train array
+handler.load_spike_trains()
+
+# At this point, handler.data contains:
+# - For taste_num (int): 3D array of shape (trials, neurons, time)
+# - For taste_num="all": 4D array of shape (tastes, trials, neurons, time)
+
+print(f"\nOriginal spike train shape: {handler.data.shape}")
+print(f"Original number of trials: {handler.data.shape[0]}")
+print(f"Original number of neurons: {handler.data.shape[1]}")
+
+# Step 2: Modify the spike trains
+# Example modifications:
+# - Remove specific trials (e.g., trials with artifacts)
+# - Remove specific neurons (e.g., poorly isolated units)
+# - Perform custom preprocessing that FitHandler doesn't support
+
+# Example: Remove first 2 trials and last 3 neurons
+trials_to_keep = slice(2, None)  # Keep from trial 2 onwards
+neurons_to_keep = slice(None, -3)  # Keep all neurons except last 3
+
+modified_data = handler.data[trials_to_keep, neurons_to_keep, :]
+print(f"\nModified spike train shape: {modified_data.shape}")
+print(f"Modified number of trials: {modified_data.shape[0]}")
+print(f"Modified number of neurons: {modified_data.shape[1]}")
+
+# Alternative: Select specific trials/neurons
+# specific_trials = [0, 2, 5]  # Keep trials 0, 2, and 5
+# specific_neurons = [0, 1, 2, 5, 10]  # Keep neurons 0, 1, 2, 5, and 10
+# modified_data = handler.data[specific_trials][:, specific_neurons, :]
+
+# Step 3: Overwrite handler.data with modified data
+# Now when we call preprocess_data(), it will use our modified data
+handler.data = modified_data
+
+# Step 4: Run subsequent pipeline methods manually/in a nested manner
+# The methods check for existence of required attributes before running,
+# so by having handler.data already set, preprocess_data() will skip loading
+
+print("\nRunning preprocessing (using modified data)...")
+handler.preprocess_data()
+
+print("Creating model...")
+handler.create_model()
+
+print("Running inference...")
 handler.run_inference()
+
+# Save output to model database
+print("Saving fit output...")
 handler.save_fit_output()
+
+print("\n" + "=" * 60)
+print("Demo complete! FitHandler ran with modified spike-trains.")
+print("=" * 60 + "\n")
+
+# ============================================================
+# END OF CUSTOMIZATION SECTION
+# ============================================================
+
+# Alternative: If you just want to run inference normally with FitHandler,
+# you can skip the above customization section and just do:
+# handler.run_inference()
+# handler.save_fit_output()
 
 # Access fit results
 # Directly from handler
 inference_outs = handler.inference_outs
-# infernece_outs contains following attributes
+# inference_outs contains following attributes
 # model : Model structure
 # approx : Fitted model
 # lambda : Inferred firing rates for each state
